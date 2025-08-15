@@ -82,7 +82,7 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
     try {
       logger.info(`Fetching transactions for budget ${budgetId}`);
 
-      let allTransactions: ynab.TransactionDetail[] = [];
+      let allTransactions: (ynab.TransactionDetail | ynab.HybridTransaction)[] = [];
 
       if (input.month) {
         // Use month-specific endpoint
@@ -162,7 +162,7 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
   }
 
   private transformTransactions(
-    transactions: ynab.TransactionDetail[]
+    transactions: (ynab.TransactionDetail | ynab.HybridTransaction)[]
   ): TransactionOutput[] {
     return transactions.map((transaction) => {
       const amount = transaction.amount / 1000; // Convert milliunits to actual currency
@@ -220,7 +220,7 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
 
   private calculateSummary(
     paginatedTransactions: TransactionOutput[],
-    allTransactions: ynab.TransactionDetail[]
+    allTransactions: (ynab.TransactionDetail | ynab.HybridTransaction)[]
   ) {
     const totalInflow = paginatedTransactions.reduce(
       (sum, t) => sum + t.inflow,
