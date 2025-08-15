@@ -23,7 +23,7 @@
   "dependencies": {
     "@types/axios": "^0.14.4",
     "axios": "^1.8.4",
-    "mcp-framework": "^0.1.29",
+    "mcp-framework": "^0.2.15",
     "ynab": "^2.9.0"
   },
   "devDependencies": {
