@@ -62,7 +62,10 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
 
   constructor() {
     super();
-    this.api = new ynab.API(process.env.YNAB_API_TOKEN || "");
+    if (!process.env.YNAB_API_TOKEN) {
+      throw new Error("YNAB_API_TOKEN environment variable is not set. Please set it to a valid YNAB API token.");
+    }
+    this.api = new ynab.API(process.env.YNAB_API_TOKEN);
     this.budgetId = process.env.YNAB_BUDGET_ID || "";
   }
 
