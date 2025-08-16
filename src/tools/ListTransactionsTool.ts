@@ -7,6 +7,7 @@ interface ListTransactionsInput {
   month: string;
   offset?: number;
   limit?: number;
+  paymentsOnly?: boolean;
 }
 
 interface TransactionOutput {
@@ -31,7 +32,7 @@ interface RelatedTransactionGroup {
 class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
   name = "list_transactions";
   description =
-    "Lists transactions for a specific month. Supports pagination and groups related transfer transactions.";
+    "Lists transactions for a specific month. Supports pagination, groups related transfer transactions, and can filter to show only external payments (non-transfers).";
 
   schema = {
     budgetId: {
@@ -49,6 +50,10 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
     limit: {
       type: z.number().optional(),
       description: "Number of transactions per page (default: 100, max: 500)",
+    },
+    paymentsOnly: {
+      type: z.boolean().optional(),
+      description: "If true, only show external payments (exclude transfers between your own accounts)",
     },
   };
 
@@ -85,15 +90,24 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
       );
       const allTransactions = response.data.transactions || [];
 
-      // Filter out deleted transactions and sort by date (newest first)
-      const activeTransactions = allTransactions
-        .filter((t) => !t.deleted)
-        .sort((a, b) => {
-          const dateCompare = b.date.localeCompare(a.date);
-          if (dateCompare !== 0) return dateCompare;
-          // If same date, sort by creation (using ID as proxy)
-          return b.id.localeCompare(a.id);
-        });
+      // Filter out deleted transactions and optionally filter for payments only
+      let activeTransactions = allTransactions
+        .filter((t) => !t.deleted);
+      
+      // Apply payments-only filter if requested
+      if (input.paymentsOnly) {
+        activeTransactions = activeTransactions.filter(
+          (t) => !t.transfer_transaction_id
+        );
+      }
+      
+      // Sort by date (newest first)
+      activeTransactions = activeTransactions.sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        // If same date, sort by creation (using ID as proxy)
+        return b.id.localeCompare(a.id);
+      });
 
       // Apply pagination
       const paginatedTransactions = activeTransactions.slice(
@@ -104,8 +118,10 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
       // Transform transactions
       const transformedTransactions = this.transformTransactions(paginatedTransactions);
 
-      // Group related transfer transactions
-      const relatedTransactions = this.groupRelatedTransactions(transformedTransactions);
+      // Group related transfer transactions (skip if payments-only mode)
+      const relatedTransactions = input.paymentsOnly
+        ? {}
+        : this.groupRelatedTransactions(transformedTransactions);
 
       // Calculate summary for current page
       const summary = this.calculateSummary(transformedTransactions, allTransactions);

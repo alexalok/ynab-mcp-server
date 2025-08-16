@@ -3,19 +3,15 @@ import * as ynab from "ynab";
 import { z } from "zod";
 class ListTransactionsTool extends MCPTool {
     name = "list_transactions";
-    description = "Lists transactions with optional filters for budget, month, or date range. Supports pagination and groups related transfer transactions.";
+    description = "Lists transactions for a specific month. Supports pagination, groups related transfer transactions, and can filter to show only external payments (non-transfers).";
     schema = {
         budgetId: {
             type: z.string().optional(),
             description: "The ID of the budget (optional, defaults to YNAB_BUDGET_ID env variable)",
         },
         month: {
-            type: z.string().optional(),
-            description: "Filter by month in YYYY-MM format (e.g., 2024-03)",
-        },
-        sinceDate: {
-            type: z.string().optional(),
-            description: "Filter transactions since this date in YYYY-MM-DD format (defaults to 30 days ago if no month specified)",
+            type: z.string(),
+            description: "Month to retrieve transactions for in YYYY-MM format (e.g., 2024-03)",
         },
         offset: {
             type: z.number().optional(),
@@ -24,6 +20,10 @@ class ListTransactionsTool extends MCPTool {
         limit: {
             type: z.number().optional(),
             description: "Number of transactions per page (default: 100, max: 500)",
+        },
+        paymentsOnly: {
+            type: z.boolean().optional(),
+            description: "If true, only show external payments (exclude transfers between your own accounts)",
         },
     };
     api;
@@ -44,30 +44,20 @@ class ListTransactionsTool extends MCPTool {
         const offset = input.offset || 0;
         const limit = Math.min(input.limit || 100, 500);
         try {
-            logger.info(`Fetching transactions for budget ${budgetId}`);
-            let allTransactions = [];
-            if (input.month) {
-                // Use month-specific endpoint
-                const monthDate = input.month + "-01"; // Convert YYYY-MM to YYYY-MM-DD
-                const response = await this.api.transactions.getTransactionsByMonth(budgetId, monthDate);
-                allTransactions = response.data.transactions || [];
+            logger.info(`Fetching transactions for budget ${budgetId} and month ${input.month}`);
+            // Use month-specific endpoint
+            const monthDate = input.month + "-01"; // Convert YYYY-MM to YYYY-MM-DD
+            const response = await this.api.transactions.getTransactionsByMonth(budgetId, monthDate);
+            const allTransactions = response.data.transactions || [];
+            // Filter out deleted transactions and optionally filter for payments only
+            let activeTransactions = allTransactions
+                .filter((t) => !t.deleted);
+            // Apply payments-only filter if requested
+            if (input.paymentsOnly) {
+                activeTransactions = activeTransactions.filter((t) => !t.transfer_transaction_id);
             }
-            else {
-                // Use general transactions endpoint with date filter
-                let sinceDate = input.sinceDate;
-                if (!sinceDate) {
-                    // Default to 30 days ago
-                    const thirtyDaysAgo = new Date();
-                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                    sinceDate = thirtyDaysAgo.toISOString().split("T")[0];
-                }
-                const response = await this.api.transactions.getTransactions(budgetId, sinceDate);
-                allTransactions = response.data.transactions;
-            }
-            // Filter out deleted transactions and sort by date (newest first)
-            const activeTransactions = allTransactions
-                .filter((t) => !t.deleted)
-                .sort((a, b) => {
+            // Sort by date (newest first)
+            activeTransactions = activeTransactions.sort((a, b) => {
                 const dateCompare = b.date.localeCompare(a.date);
                 if (dateCompare !== 0)
                     return dateCompare;
@@ -78,8 +68,10 @@ class ListTransactionsTool extends MCPTool {
             const paginatedTransactions = activeTransactions.slice(offset, offset + limit);
             // Transform transactions
             const transformedTransactions = this.transformTransactions(paginatedTransactions);
-            // Group related transfer transactions
-            const relatedTransactions = this.groupRelatedTransactions(transformedTransactions);
+            // Group related transfer transactions (skip if payments-only mode)
+            const relatedTransactions = input.paymentsOnly
+                ? {}
+                : this.groupRelatedTransactions(transformedTransactions);
             // Calculate summary for current page
             const summary = this.calculateSummary(transformedTransactions, allTransactions);
             // Pagination metadata
