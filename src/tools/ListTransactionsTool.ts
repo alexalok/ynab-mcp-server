@@ -4,8 +4,7 @@ import { z } from "zod";
 
 interface ListTransactionsInput {
   budgetId?: string;
-  month?: string;
-  sinceDate?: string;
+  month: string;
   offset?: number;
   limit?: number;
 }
@@ -32,7 +31,7 @@ interface RelatedTransactionGroup {
 class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
   name = "list_transactions";
   description =
-    "Lists transactions with optional filters for budget, month, or date range. Supports pagination and groups related transfer transactions.";
+    "Lists transactions for a specific month. Supports pagination and groups related transfer transactions.";
 
   schema = {
     budgetId: {
@@ -40,12 +39,8 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
       description: "The ID of the budget (optional, defaults to YNAB_BUDGET_ID env variable)",
     },
     month: {
-      type: z.string().optional(),
-      description: "Filter by month in YYYY-MM format (e.g., 2024-03)",
-    },
-    sinceDate: {
-      type: z.string().optional(),
-      description: "Filter transactions since this date in YYYY-MM-DD format (defaults to 30 days ago if no month specified)",
+      type: z.string(),
+      description: "Month to retrieve transactions for in YYYY-MM format (e.g., 2024-03)",
     },
     offset: {
       type: z.number().optional(),
@@ -80,34 +75,15 @@ class ListTransactionsTool extends MCPTool<ListTransactionsInput> {
     const limit = Math.min(input.limit || 100, 500);
 
     try {
-      logger.info(`Fetching transactions for budget ${budgetId}`);
+      logger.info(`Fetching transactions for budget ${budgetId} and month ${input.month}`);
 
-      let allTransactions: (ynab.TransactionDetail | ynab.HybridTransaction)[] = [];
-
-      if (input.month) {
-        // Use month-specific endpoint
-        const monthDate = input.month + "-01"; // Convert YYYY-MM to YYYY-MM-DD
-        const response = await this.api.transactions.getTransactionsByMonth(
-          budgetId,
-          monthDate
-        );
-        allTransactions = response.data.transactions || [];
-      } else {
-        // Use general transactions endpoint with date filter
-        let sinceDate = input.sinceDate;
-        if (!sinceDate) {
-          // Default to 30 days ago
-          const thirtyDaysAgo = new Date();
-          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-          sinceDate = thirtyDaysAgo.toISOString().split("T")[0];
-        }
-
-        const response = await this.api.transactions.getTransactions(
-          budgetId,
-          sinceDate
-        );
-        allTransactions = response.data.transactions;
-      }
+      // Use month-specific endpoint
+      const monthDate = input.month + "-01"; // Convert YYYY-MM to YYYY-MM-DD
+      const response = await this.api.transactions.getTransactionsByMonth(
+        budgetId,
+        monthDate
+      );
+      const allTransactions = response.data.transactions || [];
 
       // Filter out deleted transactions and sort by date (newest first)
       const activeTransactions = allTransactions
